@@ -3,6 +3,7 @@ disease/
 string module/
 nn_data/
 ppi_results/
+.vscode/
 
 
 *.pkl
