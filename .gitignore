@@ -1,0 +1,10 @@
+datasets/
+disease/
+string module/
+nn_data/
+ppi_results/
+
+
+*.pkl
+*.png
+*.jpg
