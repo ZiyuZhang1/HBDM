@@ -1,7 +1,4 @@
-datasets/
-disease/
-string module/
-nn_data/
+data/
 ppi_results/
 .vscode/
 
