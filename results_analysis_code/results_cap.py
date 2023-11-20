@@ -9,7 +9,7 @@ sys.path.append('./src/')
 
 from HBDM import LSM
     
-model_name = 'Dataset-ppi--RE-True--W-True--Epochs-15000--D-9--RH-25--LR-0.1--LP-False--CUDA-True'
+model_name = 'Dataset-st_binary--RE-True--W-True--Epochs-15000--D-7--RH-25--LR-0.1--LP-False--CUDA-True'
 model_path = 'D:/study/thesis/project/HBDM-main/ppi_results/models/'+model_name+'.pkl'
 
 with open(model_path, 'rb') as f:

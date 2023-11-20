@@ -3,15 +3,13 @@ import torch.nn as nn
 import numpy as np
 import torch_sparse
 from fractal_main_cond import Tree_kmeans_recursion
-from spectral_clustering_W import Spectral_clustering_init
+from spectral_clustering_G import Spectral_clustering_init
 from sklearn import metrics
-from scipy.special import gammaln
 # device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 # torch.set_default_tensor_type('torch.cuda.FloatTensor')
 
 # device = torch.device("cpu")
 # torch.set_default_tensor_type('torch.FloatTensor')
-
 undirected=1
 
 
@@ -19,7 +17,7 @@ undirected=1
 
 
 class LSM(nn.Module,Tree_kmeans_recursion,Spectral_clustering_init):
-    def __init__(self,data,sparse_i,sparse_j, input_size,latent_dim,graph_type,non_sparse_i=None,non_sparse_j=None,sparse_i_rem=None,sparse_j_rem=None,CVflag=False,initialization=None,scaling=None,missing_data=False,device=torch.device("cuda:0" if torch.cuda.is_available() else "cpu"),LP=True):
+    def __init__(self,data,sparse_i,sparse_j,sparse_w, input_size,latent_dim,graph_type,non_sparse_i=None,non_sparse_j=None,sparse_i_rem=None,sparse_j_rem=None,CVflag=False,initialization=None,scaling=None,missing_data=False,device=torch.device("cuda:0" if torch.cuda.is_available() else "cpu"),LP=True):
         super(LSM, self).__init__()
         Tree_kmeans_recursion.__init__(self,minimum_points=3*int(data.shape[0]/(data.shape[0]/np.log(data.shape[0]))),init_layer_split=3*torch.round(torch.log(torch.tensor(data.shape[0]).float())))
         Spectral_clustering_init.__init__(self,device=device)
@@ -41,6 +39,7 @@ class LSM(nn.Module,Tree_kmeans_recursion,Spectral_clustering_init):
         self.sparse_i_idx=sparse_i
         self.flag1=0
         self.sparse_j_idx=sparse_j
+        self.sparse_w=sparse_w
         self.pdist = nn.PairwiseDistance(p=2,eps=0)
         self.missing_data=missing_data
         self.CUDA=True
@@ -98,7 +97,7 @@ class LSM(nn.Module,Tree_kmeans_recursion,Spectral_clustering_init):
                 # calculate total NxK spase mask of cluster allocation
                 self.general_matrix=torch.sparse.FloatTensor(torch.cat((self.k_i.unsqueeze(0),self.N_j.unsqueeze(0)),0),torch.ones(self.N_j.shape[0]),torch.Size([self.total_K,self.input_size]))
                 # pairwise distances of the first layer
-                k_distance_first_layer=torch.exp(-torch.pdist(self.centroids_layer1))
+                k_distance_first_layer=-torch.pdist(self.centroids_layer1)
                 #pairwise distances of the subsequent centroids
                 total_centroids=torch.cat(self.general_centroids_sub)
                 for h_i in range(len(self.general_centroids_sub)):
@@ -107,14 +106,39 @@ class LSM(nn.Module,Tree_kmeans_recursion,Spectral_clustering_init):
             
                 
                 # create the KxK  distance matrix
-                k_distance_sub=torch.exp(-self.pdist(total_centroids.view(-1,2,total_centroids.shape[-1])[:,0,:],total_centroids.view(-1,2,total_centroids.shape[-1])[:,1,:]))
+                k_distance_sub=-self.pdist(total_centroids.view(-1,2,total_centroids.shape[-1])[:,0,:],total_centroids.view(-1,2,total_centroids.shape[-1])[:,1,:])
                 sparse_k_idx=torch.arange(self.init_layer_split,self.init_layer_split+total_centroids.shape[0]).long().view(-1,2).transpose(0,1)
                 self.final_idx=torch.cat((self.init_layer_idx,sparse_k_idx),1)
                 self.k_exp_dist=torch.sparse.FloatTensor(self.final_idx,torch.cat((k_distance_first_layer,k_distance_sub)),torch.Size([self.total_K,self.total_K]))
 
                 
                 # calculate bias x mask
-                sum_cl_idx=torch.sparse.mm(self.general_matrix,torch.exp(self.gamma).unsqueeze(-1))
+                # sum_cl_idx=torch.sparse.mm(self.general_matrix,self.gamma).unsqueeze(-1)
+                ############################
+                for level in range(len(self.general_cl_id)):
+                    cl_id = self.general_cl_id[level]
+                    mask = self.general_mask[level]
+                    dis = self.k_exp_dist[torch.unique(cl_id),torch.unique(cl_id)]
+                    # Create a dictionary to group elements by their cluster IDs
+                    grouped_data = {}
+                    for i, cluster_id in enumerate(cl_id):
+                        if cluster_id not in grouped_data:
+                            grouped_data[cluster_id] = []
+                        grouped_data[cluster_id].append(mask[i])
+                    # Convert the grouped data to a list of PyTorch tensors
+                    l = [torch.tensor(grouped_data[cluster_id]).cuda() for cluster_id in sorted(grouped_data.keys())]
+                    # Create an upper triangular matrix for the results
+                    results = torch.tensor(0.0).cuda()
+                    
+                    # Vectorized computation of the results
+                    for c1_pos in range(len(l)):
+                        for c2_pos in range(c1_pos + 1, len(l)):
+                            c1 = l[c1_pos]
+                            c2 = l[c2_pos]
+                            dist = dis[c1_pos, c2_pos]
+                            v1, v2 = torch.meshgrid(c1, c2)
+                            results += torch.sum((self.gamma[v1] + self.gamma[v2] + dist) ** 2)
+                #################################              
                 # translate mask positions to distance positions
                 if self.missing_data:
                     # create triangular matrix for distance translation of first layer centroids
@@ -153,29 +177,48 @@ class LSM(nn.Module,Tree_kmeans_recursion,Spectral_clustering_init):
                 self.centroids_layer1=self.all_centroids[0:int(self.init_layer_split)]
                 self.first_centers=self.centroids_layer1.detach()
 
-                k_distance_first_layer=torch.exp(-torch.pdist(self.centroids_layer1))
+                k_distance_first_layer=-torch.pdist(self.centroids_layer1)
                 #pairwise distances of the subsequent centroids
                 total_centroids=self.all_centroids[int(self.init_layer_split):]
                     
                 
                 # create the KxK  distance matrix
-                k_distance_sub=torch.exp(-self.pdist(total_centroids.view(-1,2,total_centroids.shape[-1])[:,0,:],total_centroids.view(-1,2,total_centroids.shape[-1])[:,1,:]))
+                k_distance_sub=-self.pdist(total_centroids.view(-1,2,total_centroids.shape[-1])[:,0,:],total_centroids.view(-1,2,total_centroids.shape[-1])[:,1,:])
                 self.k_exp_dist=torch.sparse.FloatTensor(self.final_idx,torch.cat((k_distance_first_layer,k_distance_sub)),torch.Size([self.total_K,self.total_K]))
 
                 # calculate bias x mask
-                sum_cl_idx=torch.sparse.mm(self.general_matrix,torch.exp(self.gamma).unsqueeze(-1))
-    
+                # sum_cl_idx=torch.sparse.mm(self.general_matrix,torch.exp(self.gamma).unsqueeze(-1))
+                ############################
+                for level in range(len(self.general_cl_id)):
+                    cl_id = self.general_cl_id[level]
+                    mask = self.general_mask[level]
+                    dis = self.k_exp_dist[torch.unique(cl_id)][:,torch.unique(cl_id)]
+                    # Create a dictionary to group elements by their cluster IDs
+                    grouped_data = {}
+                    for i, cluster_id in enumerate(cl_id):
+                        if cluster_id not in grouped_data:
+                            grouped_data[cluster_id] = []
+                        grouped_data[cluster_id].append(mask[i])
+                    # Convert the grouped data to a list of PyTorch tensors
+                    l = [torch.tensor(grouped_data[cluster_id]).cuda() for cluster_id in sorted(grouped_data.keys())]
+                    # Create an upper triangular matrix for the results
+                    results = torch.tensor(0.0).cuda()
+                    
+                    # Vectorized computation of the results
+                    for c1_pos in range(len(l)):
+                        for c2_pos in range(c1_pos + 1, len(l)):
+                            c1 = l[c1_pos]
+                            c2 = l[c2_pos]
+                            dist = dis[c1_pos, c2_pos]
+                            v1, v2 = torch.meshgrid(c1, c2)
+                            results += torch.sum((self.gamma[v1] + self.gamma[v2] + dist) ** 2)
+                #################################     
            
             if self.missing_data:
-                theta_missing=(torch.exp(self.gamma[self.removed_bias_i])*torch.exp(self.gamma[self.removed_bias_j])* torch.cat((k_distance_first_layer,k_distance_sub))[self.total_missing]).sum()
-               # torch_sparse.spmm(indices, values, n, n, Y_dense)
-                theta_approx=torch.exp(self.bias)*(torch.mm(sum_cl_idx.transpose(0,1),(torch_sparse.spmm(self.final_idx,torch.cat((k_distance_first_layer,k_distance_sub)),self.total_K,self.total_K,sum_cl_idx))).sum())-torch.exp(self.bias)*theta_missing
-
-                #theta_approx=torch.exp(self.bias)*(torch.mm(sum_cl_idx.transpose(0,1),(torch.sparse.mm(self.k_exp_dist,sum_cl_idx))).sum())-torch.exp(self.bias)*theta_missing
-                self.theta_approx=theta_approx
+                print('0')
             else:
                 # calculat approximation
-                theta_approx=torch.exp(self.bias)*(torch.mm(sum_cl_idx.transpose(0,1),(torch_sparse.spmm(self.final_idx,torch.cat((k_distance_first_layer,k_distance_sub)),self.total_K,self.total_K,sum_cl_idx))).sum())
+                theta_approx=results
 
         else:
             if self.build_hierarchy:
@@ -193,7 +236,7 @@ class LSM(nn.Module,Tree_kmeans_recursion,Spectral_clustering_init):
                 # calculate total NxK spase mask of cluster allocation
                 self.general_matrix=torch.sparse.FloatTensor(torch.cat((self.k_i.unsqueeze(0),self.N_j.unsqueeze(0)),0),torch.ones(self.N_j.shape[0]),torch.Size([self.total_K,self.input_size]))
                 # pairwise distances of the first layer
-                k_distance_first_layer=torch.exp(-torch.pdist(self.centroids_layer1))
+                k_distance_first_layer=-torch.pdist(self.centroids_layer1)
                 #pairwise distances of the subsequent centroids
                 total_centroids=torch.cat(self.general_centroids_sub)
                 self.center_history.append(init_centroids.shape[0])
@@ -204,27 +247,41 @@ class LSM(nn.Module,Tree_kmeans_recursion,Spectral_clustering_init):
             
                 
                 # create the KxK  distance matrix
-                k_distance_sub=torch.exp(-self.pdist(total_centroids.view(-1,2,total_centroids.shape[-1])[:,0,:],total_centroids.view(-1,2,total_centroids.shape[-1])[:,1,:]))
+                k_distance_sub=-self.pdist(total_centroids.view(-1,2,total_centroids.shape[-1])[:,0,:],total_centroids.view(-1,2,total_centroids.shape[-1])[:,1,:])
                 sparse_k_idx=torch.arange(self.init_layer_split,self.init_layer_split+total_centroids.shape[0]).long().view(-1,2).transpose(0,1)
                 self.final_idx=torch.cat((self.init_layer_idx,sparse_k_idx),1)
                 self.k_exp_dist=torch.sparse.FloatTensor(self.final_idx,torch.cat((k_distance_first_layer,k_distance_sub)),torch.Size([self.total_K,self.total_K]))
                 
                 # calculate bias x mask
-                sum_cl_idx=torch.sparse.mm(self.general_matrix,torch.exp(self.gamma).unsqueeze(-1))
+                # sum_cl_idx=torch.sparse.mm(self.general_matrix,torch.exp(self.gamma).unsqueeze(-1))
+                ############################
+                for level in range(len(self.general_cl_id)):
+                    cl_id = self.general_cl_id[level]
+                    mask = self.general_mask[level]
+                    dis = self.k_exp_dist[torch.unique(cl_id)][:,torch.unique(cl_id)]
+                    # Create a dictionary to group elements by their cluster IDs
+                    grouped_data = {}
+                    for i, cluster_id in enumerate(cl_id):
+                        if cluster_id not in grouped_data:
+                            grouped_data[cluster_id] = []
+                        grouped_data[cluster_id].append(mask[i])
+                    # Convert the grouped data to a list of PyTorch tensors
+                    l = [torch.tensor(grouped_data[cluster_id]).cuda() for cluster_id in sorted(grouped_data.keys())]
+                    # Create an upper triangular matrix for the results
+                    results = torch.tensor(0.0).cuda()
+                    
+                    # Vectorized computation of the results
+                    for c1_pos in range(len(l)):
+                        for c2_pos in range(c1_pos + 1, len(l)):
+                            c1 = l[c1_pos]
+                            c2 = l[c2_pos]
+                            dist = dis[c1_pos, c2_pos]
+                            v1, v2 = torch.meshgrid(c1, c2)
+                            results += torch.sum((self.gamma[v1] + self.gamma[v2] + dist) ** 2)
+                ################################# 
                 # update centroids
                 if self.missing_data:
-                    # create triangular matrix for distance translation of first layer centroids
-                    self.translate_idx_to_distance_pos=torch.sparse.FloatTensor(self.init_layer_idx,torch.arange(self.init_layer_idx.shape[-1]),torch.Size([int(self.init_layer_split),int(self.init_layer_split)]))
-                    self.translate_idx_to_distance_pos=(self.translate_idx_to_distance_pos+self.translate_idx_to_distance_pos.transpose(0,1)).to_dense()
-                    first_missing_centers=self.translate_idx_to_distance_pos[self.first_missing_center_i,self.first_missing_center_j]
-                    sub_missing_centers=(torch.minimum(torch.cat(self.missing_center_i)-self.init_layer_split, torch.cat(self.missing_center_j)-self.init_layer_split)/2).long()+self.init_layer_idx.shape[-1]
-                    self.total_missing=torch.cat((first_missing_centers,sub_missing_centers))
-                    self.removed_bias_i=torch.cat(self.removed_bias_i)
-                    self.removed_bias_j=torch.cat(self.removed_bias_j)
-                    
-                    mask_extra=self.global_cl[self.removed_i]==self.global_cl[self.removed_j]
-                    self.extra_i=self.removed_i[mask_extra]
-                    self.extra_j=self.removed_j[mask_extra]
+                    print('0')
             else:
                
                 for i in range(100):
@@ -245,29 +302,50 @@ class LSM(nn.Module,Tree_kmeans_recursion,Spectral_clustering_init):
                 
                 self.centroids_layer1=self.all_centroids[0:int(self.init_layer_split)]
                 self.first_centers=self.centroids_layer1.detach()
-                k_distance_first_layer=torch.exp(-torch.pdist(self.centroids_layer1))
+                k_distance_first_layer=-torch.pdist(self.centroids_layer1)
                 #pairwise distances of the subsequent centroids
                 total_centroids=self.all_centroids[int(self.init_layer_split):]
                     
                 
                 # create the KxK  distance matrix
-                k_distance_sub=torch.exp(-self.pdist(total_centroids.view(-1,2,total_centroids.shape[-1])[:,0,:],total_centroids.view(-1,2,total_centroids.shape[-1])[:,1,:]))
+                k_distance_sub=-self.pdist(total_centroids.view(-1,2,total_centroids.shape[-1])[:,0,:],total_centroids.view(-1,2,total_centroids.shape[-1])[:,1,:])
                 self.k_exp_dist=torch.sparse.FloatTensor(self.final_idx,torch.cat((k_distance_first_layer,k_distance_sub)),torch.Size([self.total_K,self.total_K]))
 
                 
                 # calculate bias x mask
-                sum_cl_idx=torch.sparse.mm(self.general_matrix,torch.exp(self.gamma).unsqueeze(-1))
-    
+                # sum_cl_idx=torch.sparse.mm(self.general_matrix,torch.exp(self.gamma).unsqueeze(-1))
+                ############################
+                for level in range(len(self.general_cl_id)):
+                    cl_id = self.general_cl_id[level]
+                    mask = self.general_mask[level]
+                    dis = self.k_exp_dist[torch.unique(cl_id)][:,torch.unique(cl_id)]
+                    # Create a dictionary to group elements by their cluster IDs
+                    grouped_data = {}
+                    for i, cluster_id in enumerate(cl_id):
+                        if cluster_id not in grouped_data:
+                            grouped_data[cluster_id] = []
+                        grouped_data[cluster_id].append(mask[i])
+                    # Convert the grouped data to a list of PyTorch tensors
+                    l = [torch.tensor(grouped_data[cluster_id]).cuda() for cluster_id in sorted(grouped_data.keys())]
+                    # Create an upper triangular matrix for the results
+                    results = torch.tensor(0.0).cuda()
+                    
+                    # Vectorized computation of the results
+                    for c1_pos in range(len(l)):
+                        for c2_pos in range(c1_pos + 1, len(l)):
+                            c1 = l[c1_pos]
+                            c2 = l[c2_pos]
+                            dist = dis[c1_pos, c2_pos]
+                            v1, v2 = torch.meshgrid(c1, c2)
+                            results += torch.sum((self.gamma[v1] + self.gamma[v2] + dist) ** 2)
+                ################################# 
            
             
             if self.missing_data:
-                theta_missing=(torch.exp(self.gamma[self.removed_bias_i])*torch.exp(self.gamma[self.removed_bias_j])* torch.cat((k_distance_first_layer,k_distance_sub))[self.total_missing]).sum()
-               # theta_approx=(torch.mm(sum_cl_idx.transpose(0,1),(torch.sparse.mm(self.k_exp_dist,sum_cl_idx))).sum())-theta_missing
-                theta_approx=(torch.mm(sum_cl_idx.transpose(0,1),(torch_sparse.spmm(self.final_idx,torch.cat((k_distance_first_layer,k_distance_sub)),self.total_K,self.total_K,sum_cl_idx))).sum())-theta_missing
-
+                print('0')
             else:
                 # calculate approximation
-                theta_approx=(torch.mm(sum_cl_idx.transpose(0,1),(torch_sparse.spmm(self.final_idx,torch.cat((k_distance_first_layer,k_distance_sub)),self.total_K,self.total_K,sum_cl_idx))).sum())
+                theta_approx=results
             
             
             
@@ -350,7 +428,8 @@ class LSM(nn.Module,Tree_kmeans_recursion,Spectral_clustering_init):
                 ## Block kmeans analytically#########################################################################################################
                 
                 lambda_block=-block_pdist+self.gamma[self.analytical_i]+self.gamma[self.analytical_j]+self.bias
-                an_lik=torch.exp(lambda_block).sum()
+        
+                an_lik=torch.sum(lambda_block**2)
                 
             else:
                 block_pdist=self.pdist(self.latent_z[self.analytical_i],self.latent_z[self.analytical_j])+1e-08
@@ -358,12 +437,13 @@ class LSM(nn.Module,Tree_kmeans_recursion,Spectral_clustering_init):
                 ## Block kmeans analytically#########################################################################################################
                 
                 lambda_block=-block_pdist+self.gamma[self.analytical_i]+self.gamma[self.analytical_j]
-                an_lik=torch.exp(lambda_block).sum()
+                
+                an_lik=torch.sum(lambda_block**2)
 
         return an_lik
 
     #introduce the likelihood function containing the two extra biases gamma_i and alpha_j
-    def LSM_likelihood_bias(self,epoch):
+    def square_loss(self,epoch):
         '''
 
         Parameters
@@ -431,24 +511,25 @@ class LSM(nn.Module,Tree_kmeans_recursion,Spectral_clustering_init):
         #############################################################################################################################################################        
             
         else:
-            ###########changed part--zzy
             if self.scaling:
                 thetas=self.approximation_blocks()
                 #theta_stack=torch.stack(self.thetas).sum()
                 analytical_blocks_likelihood=self.local_likelihood()
          ##############################################################################################################################
                 
-                for index, sparse_i_idx_level in enumerate(self.sparse_i_idx):
-                    sparse_j_idx_level = self.sparse_j_idx[index]
-                    z_pdist=(((self.scaling_factor*self.latent_z[sparse_i_idx_level].detach()-self.scaling_factor*self.latent_z[sparse_j_idx_level].detach()+1e-06)**2).sum(-1))**0.5                
-                    logit_u=-z_pdist+self.gamma[sparse_i_idx_level]+self.gamma[sparse_j_idx_level]+self.bias
-                    if index == 0:
-                        logit_u_levels = torch.sum(logit_u)
-                    else:
-                        logit_u_levels += torch.sum((index+1)*logit_u)-len(sparse_i_idx_level)*gammaln(index+1 + 1)
+                z_pdist=(((self.scaling_factor*self.latent_z[self.sparse_i_idx].detach()-self.scaling_factor*self.latent_z[self.sparse_j_idx].detach()+1e-06)**2).sum(-1))**0.5
                 
+        ####################################################################################################################################
+                
+                                
+                #take the sampled matrix indices in order to index gamma_i and alpha_j correctly and in agreement with the previous
+                #remember the indexing of the z_pdist vector
+               
+                #################yest**2 approx
+                linkpart =2*self.sparse_w*(-z_pdist+self.gamma[self.sparse_i_idx]+self.gamma[self.sparse_j_idx]+self.bias)
          #########################################################################################################################################################      
-                log_likelihood_sparse=logit_u_levels-thetas-(analytical_blocks_likelihood)
+                # log_likelihood_sparse=torch.sum(logit_u)-thetas-(analytical_blocks_likelihood)
+                square_loss_sparse = torch.sum(self.sparse_w**2) -torch.sum(linkpart) + thetas + analytical_blocks_likelihood
                 if self.epoch==500:
                     self.gamma.data=0.5*self.bias.data+self.gamma.data
                     self.scaling=0
@@ -458,30 +539,28 @@ class LSM(nn.Module,Tree_kmeans_recursion,Spectral_clustering_init):
                 
                 
             else: 
+               
                 thetas=self.approximation_blocks()
-
-               
                 analytical_blocks_likelihood=self.local_likelihood()
-                for index, sparse_i_idx_level in enumerate(self.sparse_i_idx):
-                    sparse_j_idx_level = self.sparse_j_idx[index]
-                    z_pdist=(((self.latent_z[sparse_i_idx_level]-self.latent_z[sparse_j_idx_level]+1e-06)**2).sum(-1))**0.5                
-                    #z_pdist=(((self.latent_z[self.sparse_i_idx]-self.latent_z[self.sparse_j_idx]+1e-06)**2).sum(-1))**0.5
+             
+                z_pdist=(((self.latent_z[self.sparse_i_idx]-self.latent_z[self.sparse_j_idx]+1e-06)**2).sum(-1))**0.5
 
-                    logit_u=-z_pdist+self.gamma[sparse_i_idx_level]+self.gamma[sparse_j_idx_level]
-                    #logit_u=-z_pdist+self.gamma[self.sparse_i_idx]+self.gamma[self.sparse_j_idx]
-                    if index == 0:
-                        logit_u_levels = torch.sum(logit_u)
-                    else:
-
-                        logit_u_levels += torch.sum((index+1)*logit_u)-len(sparse_i_idx_level)*gammaln(index+1 + 1)
+        ####################################################################################################################################
                 
-         
-                log_likelihood_sparse=logit_u_levels-thetas-(analytical_blocks_likelihood)
+                                
+                #take the sampled matrix indices in order to index gamma_i and alpha_j correctly and in agreement with the previous
+                #remember the indexing of the z_pdist vector
                
+               
+                # logit_u=-z_pdist+self.gamma[self.sparse_i_idx]+self.gamma[self.sparse_j_idx]
+                linkpart =2*self.sparse_w*(-z_pdist+self.gamma[self.sparse_i_idx]+self.gamma[self.sparse_j_idx]+self.bias)
+
+         #########################################################################################################################################################      
+                # log_likelihood_sparse=torch.sum(logit_u)-thetas-analytical_blocks_likelihood
+                square_loss_sparse = torch.sum(self.sparse_w**2) -torch.sum(linkpart) + thetas + analytical_blocks_likelihood
+          
         #############################################################################################################################################################        
-                 
-            
-        return log_likelihood_sparse
+        return square_loss_sparse
     
     def link_prediction(self):
         with torch.no_grad():

@@ -14,10 +14,10 @@ print(sys.path)
 parser = argparse.ArgumentParser(description='Hierarchical Block Distance Model')
 #####for now changed 
 parser.add_argument('--RE', type=eval, 
-                      choices=[True, False], default=False,
+                      choices=[True, False], default=True,
                     help='activates random effects')
 parser.add_argument('--W', type=eval, 
-                      choices=[True, False], default=False,
+                      choices=[True, False], default=True,
                     help='activates random effects')
 parser.add_argument('--epochs', type=int, default=15000, metavar='N',
                     help='number of epochs for training (default: 15K)')
@@ -34,13 +34,14 @@ parser.add_argument('--LP',type=eval,
                       choices=[True, False], default=False,
                     help='performs link prediction')
 
-parser.add_argument('--D', type=int, default=2, metavar='N',
+parser.add_argument('--D', type=int, default=7
+                    , metavar='N',
                     help='dimensionality of the embeddings (default: 2)')
 
 parser.add_argument('--lr', type=int, default=0.1, metavar='N',
                     help='learning rate for the ADAM optimizer (default: 0.1)')
 # changed dataset
-parser.add_argument('--dataset', type=str, default='dblp',
+parser.add_argument('--dataset', type=str, default='st',
                     help='dataset to apply HBDM')
 
 
@@ -80,18 +81,24 @@ if __name__ == "__main__":
             if args.W:
                 sparse_i = []
                 sparse_j = []
-                for level in range(1,10):
-                    inputfile = "./datasets/"+dataset+'/level_'+str(level)
+                if args.dataset in ['ppi','st_binary']:
+                    range1 = range(1,10)
+                elif args.dataset == 'stppi':
+                    range1 = range(10)
+                elif args.dataset == 'st':
+                    range1 = range(9)
+                for level in range1:
+                    inputfile = "./data/datasets/"+dataset+'/level_'+str(level)
                     sparse_i_level=torch.from_numpy(np.loadtxt(inputfile+'_sparse_i.txt')).long().to(device)
                     # input data, link column positions with i<j
-                    sparse_j_level=torch.from_numpy(np.loadtxt(inputfile+'_sparse_i.txt')).long().to(device)
+                    sparse_j_level=torch.from_numpy(np.loadtxt(inputfile+'_sparse_j.txt')).long().to(device)
                     sparse_i.append(sparse_i_level)
                     sparse_j.append(sparse_j_level)
             else:
                 # input data, link rows i positions with i<j
-                sparse_i=torch.from_numpy(np.loadtxt("./datasets/"+dataset+'/sparse_i.txt')).long().to(device)
+                sparse_i=torch.from_numpy(np.loadtxt("./data/datasets/"+dataset+'/sparse_i.txt')).long().to(device)
                 # input data, link column positions with i<j
-                sparse_j=torch.from_numpy(np.loadtxt("./datasets/"+dataset+'/sparse_j.txt')).long().to(device)
+                sparse_j=torch.from_numpy(np.loadtxt("./data/datasets/"+dataset+'/sparse_j.txt')).long().to(device)
             
             if args.LP:
                 # file denoting rows i of missing links, with i<j 
@@ -141,13 +148,13 @@ if __name__ == "__main__":
                           print('AUC-PR:',pr)
             writer.close()
     latent_representations = model.latent_z
-    file_path = 'latent_representations.pkl'
-    model_path = 'model_'+name+'.pkl'
+
+    root = 'D:/study/thesis/project/HBDM-main/ppi_results'
+    latent_path = root+'/latent/'+name+'.pkl'
+    model_path = root+'/models/'+name+'.pkl'
     # Serialize and save the Tensor to the file
-    with open(file_path, 'wb') as file:
+    with open(latent_path, 'wb') as file:
         pickle.dump(latent_representations, file)
-    # Close the file
-    file.close()
 
     with open(model_path, 'wb') as f:
         pickle.dump(model, f)
