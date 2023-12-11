@@ -19,7 +19,7 @@ undirected=1
 
 
 class LSM(nn.Module,Tree_kmeans_recursion,Spectral_clustering_init):
-    def __init__(self,data,sparse_i,sparse_j, input_size,latent_dim,graph_type,non_sparse_i=None,non_sparse_j=None,sparse_i_rem=None,sparse_j_rem=None,CVflag=False,initialization=None,scaling=None,missing_data=False,device=torch.device("cuda:0" if torch.cuda.is_available() else "cpu"),LP=True):
+    def __init__(self,data,sparse_i,sparse_j,link_w, input_size,latent_dim,graph_type,non_sparse_i=None,non_sparse_j=None,sparse_i_rem=None,sparse_j_rem=None,CVflag=False,initialization=None,scaling=None,missing_data=False,device=torch.device("cuda:0" if torch.cuda.is_available() else "cpu"),LP=True):
         super(LSM, self).__init__()
         Tree_kmeans_recursion.__init__(self,minimum_points=3*int(data.shape[0]/(data.shape[0]/np.log(data.shape[0]))),init_layer_split=3*torch.round(torch.log(torch.tensor(data.shape[0]).float())))
         Spectral_clustering_init.__init__(self,device=device)
@@ -41,6 +41,7 @@ class LSM(nn.Module,Tree_kmeans_recursion,Spectral_clustering_init):
         self.sparse_i_idx=sparse_i
         self.flag1=0
         self.sparse_j_idx=sparse_j
+        self.link_w = link_w
         self.pdist = nn.PairwiseDistance(p=2,eps=0)
         self.missing_data=missing_data
         self.CUDA=True
@@ -438,14 +439,15 @@ class LSM(nn.Module,Tree_kmeans_recursion,Spectral_clustering_init):
                 analytical_blocks_likelihood=self.local_likelihood()
          ##############################################################################################################################
                 
-                for index, sparse_i_idx_level in enumerate(self.sparse_i_idx):
+                for index,weight in enumerate(self.link_w): 
+                    sparse_i_idx_level =self.sparse_i_idx[index]
                     sparse_j_idx_level = self.sparse_j_idx[index]
                     z_pdist=(((self.scaling_factor*self.latent_z[sparse_i_idx_level].detach()-self.scaling_factor*self.latent_z[sparse_j_idx_level].detach()+1e-06)**2).sum(-1))**0.5                
                     logit_u=-z_pdist+self.gamma[sparse_i_idx_level]+self.gamma[sparse_j_idx_level]+self.bias
                     if index == 0:
-                        logit_u_levels = torch.sum(logit_u)
+                        logit_u_levels = torch.sum((weight)*logit_u)-len(sparse_i_idx_level)*gammaln(weight + 1)
                     else:
-                        logit_u_levels += torch.sum((index+1)*logit_u)-len(sparse_i_idx_level)*gammaln(index+1 + 1)
+                        logit_u_levels += torch.sum((weight)*logit_u)-len(sparse_i_idx_level)*gammaln(weight + 1)
                 
          #########################################################################################################################################################      
                 log_likelihood_sparse=logit_u_levels-thetas-(analytical_blocks_likelihood)
@@ -462,7 +464,8 @@ class LSM(nn.Module,Tree_kmeans_recursion,Spectral_clustering_init):
 
                
                 analytical_blocks_likelihood=self.local_likelihood()
-                for index, sparse_i_idx_level in enumerate(self.sparse_i_idx):
+                for index,weight in enumerate(self.link_w): 
+                    sparse_i_idx_level =self.sparse_i_idx[index]
                     sparse_j_idx_level = self.sparse_j_idx[index]
                     z_pdist=(((self.latent_z[sparse_i_idx_level]-self.latent_z[sparse_j_idx_level]+1e-06)**2).sum(-1))**0.5                
                     #z_pdist=(((self.latent_z[self.sparse_i_idx]-self.latent_z[self.sparse_j_idx]+1e-06)**2).sum(-1))**0.5
@@ -470,10 +473,10 @@ class LSM(nn.Module,Tree_kmeans_recursion,Spectral_clustering_init):
                     logit_u=-z_pdist+self.gamma[sparse_i_idx_level]+self.gamma[sparse_j_idx_level]
                     #logit_u=-z_pdist+self.gamma[self.sparse_i_idx]+self.gamma[self.sparse_j_idx]
                     if index == 0:
-                        logit_u_levels = torch.sum(logit_u)
+                        logit_u_levels = torch.sum((weight)*logit_u)-len(sparse_i_idx_level)*gammaln(weight + 1)
                     else:
 
-                        logit_u_levels += torch.sum((index+1)*logit_u)-len(sparse_i_idx_level)*gammaln(index+1 + 1)
+                        logit_u_levels += torch.sum((weight)*logit_u)-len(sparse_i_idx_level)*gammaln(weight+ 1)
                 
          
                 log_likelihood_sparse=logit_u_levels-thetas-(analytical_blocks_likelihood)

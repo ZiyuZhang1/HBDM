@@ -21,8 +21,9 @@ class Spectral_clustering_init():
         list1  = [tensor.cpu().numpy() for tensor in self.sparse_i_idx]
         list2  = [tensor.cpu().numpy() for tensor in self.sparse_j_idx]
         weightes = []
-        for i, sublist in enumerate(list1):
-            weightes += len(sublist)*[float(i+1)]
+        for i,weight in enumerate(self.link_w):
+            sublist = list1[i]
+            weightes += len(sublist)*[float(weight)]
         weightes = weightes*2
         nodes1 = np.concatenate(list1)
         ndoes2 = np.concatenate(list2)
