@@ -100,9 +100,8 @@ class LSM(nn.Module,Tree_kmeans_recursion,Spectral_clustering_init):
         
             
         z_pdist=(((self.latent_z[self.sparse_i_idx]-self.latent_z[self.sparse_j_idx]+1e-06)**2).sum(-1))**0.5
-        y_pre = -z_pdist+self.gamma[self.sparse_i_idx]+self.gamma[self.sparse_j_idx]+self.bias
-    #     linkpart =2*self.sparse_w*y_pre
-    #     square_loss_sparse = torch.sum(self.sparse_w**2) -torch.sum(linkpart) + torch.sum(y_pre**2)
+        # y_pre = -z_pdist+self.gamma[self.sparse_i_idx]+self.gamma[self.sparse_j_idx]+self.bias
+        y_pre = -z_pdist+self.gamma[self.sparse_i_idx]+self.gamma[self.sparse_j_idx]
         square_loss_sparse = torch.sum((y_pre-self.sparse_w)**2)
         
     #############################################################################################################################################################        

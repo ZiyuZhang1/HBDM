@@ -7,6 +7,7 @@ from tqdm import tqdm
 import pickle
 import os
 import time
+
 print(sys.path)
 
 sys.path.append('./src/')
@@ -14,12 +15,12 @@ print(sys.path)
 parser = argparse.ArgumentParser(description='Hierarchical Block Distance Model')
 #####for now changed 
 parser.add_argument('--RE', type=eval, 
-                      choices=[True, False], default=True,
+                      choices=[True, False], default=False,
                     help='activates random effects')
 parser.add_argument('--W', type=eval, 
-                      choices=[0,1,2], default=0,
+                      choices=[0,1,2], default=2,
                     help='activates random effects')
-parser.add_argument('--epochs', type=int, default=15000, metavar='N',
+parser.add_argument('--epochs', type=int, default=1000, metavar='N',
                     help='number of epochs for training (default: 15K)')
 
 ####### keep
@@ -35,7 +36,7 @@ parser.add_argument('--LP',type=eval,
                       choices=[True, False], default=False,
                     help='performs link prediction')
 
-parser.add_argument('--D', type=int, default=4
+parser.add_argument('--D', type=int, default=[2,8]
                     , metavar='N',
                     help='dimensionality of the embeddings (default: 2)')
 
@@ -71,21 +72,23 @@ elif args.W == 0 and args.RE:
     from HBDM_RE import LSM
 elif args.W == 0:
     from HBDM import LSM
-    
+
+from experiments import complex_detection,pathway_detection
     
 start_time = time.time() 
-
+def is_sparse(tensor):
+    return isinstance(tensor, torch.Tensor) and tensor.layout == torch.sparse_coo
 
 if __name__ == "__main__":
-    from torch.utils.tensorboard import SummaryWriter
-    name = f"Dataset-{args.dataset}--RE-{args.RE}--W-{args.W}--Epochs-{args.epochs}--D-{args.D}--RH-{args.RH}--LR-{args.lr}--LP-{args.LP}--CUDA-{args.cuda}"
-    # name = 'NS_Dataset-ppi--RE-True--W-2--Epochs-15000--D-4--RH-25--LR-0.5--LP-False--CUDA-True'
-    writer = SummaryWriter(log_dir=r"D:\study\thesis\project\HBDM-main\ppi_results\training_curve\{}".format(name))
+    # from torch.utils.tensorboard import SummaryWriter
+    # name = 'NB_Dataset-ppi--RE-True--W-2--Epochs-15000--D-4--RH-25--LR-0.1--LP-False--CUDA-True'
+    # writer = SummaryWriter(log_dir=r"D:\study\thesis\project\HBDM-main\ppi_results\training_curve\{}".format(name))
     
-    latent_dims=[args.D]
+    latent_dims=args.D
     datasets=[args.dataset]
     for dataset in datasets:
         for latent_dim in latent_dims:
+            name = f"Dataset-{args.dataset}--RE-{args.RE}--W-{args.W}--Epochs-{args.epochs}--D-{args.D}--RH-{args.RH}--LR-{args.lr}--LP-{args.LP}--CUDA-{args.cuda}"
             if args.LP:
                 # file denoting rows i of missing links, with i<j 
                 sparse_i_rem=torch.from_numpy(np.loadtxt("./datasets/"+dataset+'/sparse_i_rem.txt')).long().to(device)
@@ -102,6 +105,11 @@ if __name__ == "__main__":
                 sparse_i_rem=None
                 sparse_j_rem=None
             if args.W == 1 or args.W == 0:
+                epoch_recod = []
+                loss_record = []
+                F1_complex_record = []
+                F1_pathway_record = []
+                PR_auc_pathway_record = []
                 if args.W == 1:
                     sparse_i = []
                     sparse_j = []
@@ -132,7 +140,7 @@ if __name__ == "__main__":
                     optimizer.zero_grad() # clear the gradients.   
                     loss.backward() # backpropagate
                     optimizer.step() # update the weights
-                    writer.add_scalar("loss", (loss.detach()*N)/elements, epoch)
+                    # writer.add_scalar("loss", (loss.detach()*N)/elements, epoch)
                     if epoch%1000==0:
                         print('Iteration Number:', epoch)
                         print('Negative Log-Likelihood:',(loss.item()*N)/elements)
@@ -140,11 +148,25 @@ if __name__ == "__main__":
                             roc,pr=model.link_prediction() 
                             print('AUC-ROC:',roc)
                             print('AUC-PR:',pr)
-                writer.close()
+                        F1_complex = complex_detection(model)
+                        PR_auc_pathway, F1_pathway = pathway_detection(model)
+                        epoch_recod.append(epoch)
+                        F1_complex_record.append(F1_complex)
+                        F1_pathway_record.append(F1_pathway)
+                        PR_auc_pathway_record.append(PR_auc_pathway)
+                        loss_record.append((loss.item()*N)/elements)
+                # writer.close()
             elif args.W == 2:
+                epoch_recod = []
+                loss_record = []
+                F1_complex_record = []
+                F1_pathway_record = []
+                PR_auc_pathway_record = []
+
                 sparse_i=torch.from_numpy(np.loadtxt("./data/datasets/"+dataset+'/sparse_i.txt')).long().to(device)
                 sparse_j=torch.from_numpy(np.loadtxt("./data/datasets/"+dataset+'/sparse_j.txt')).long().to(device)
                 sparse_w=torch.from_numpy(np.loadtxt("./data/datasets/"+dataset+'/sparse_w.txt')).long().to(device)
+                # sparse_w=torch.from_numpy(np.loadtxt("./data/datasets/"+dataset+'/nor_sparse_w.txt')).long().to(device)
                 N=int(sparse_j.max()+1)
 
                 model = LSM(torch.randn(N,latent_dim),sparse_i,sparse_j,sparse_w,N,latent_dim=latent_dim,non_sparse_i=non_sparse_i,non_sparse_j=non_sparse_j,sparse_i_rem=sparse_i_rem,sparse_j_rem=sparse_j_rem,CVflag=True,graph_type='undirected',missing_data=False,device=device,LP=args.LP).to(device)
@@ -157,47 +179,63 @@ if __name__ == "__main__":
                     optimizer.zero_grad() # clear the gradients.   
                     loss.backward() # backpropagate
                     optimizer.step() # update the weights
-                    writer.add_scalar("loss", (loss.detach()*N)/elements, epoch)
+                    # writer.add_scalar("loss", (loss.detach()*N)/elements, epoch)
                     if epoch%1000==0:
                         print('Iteration Number:', epoch, 'Loss:',(loss.item()*N)/elements)
-                writer.close()
+                        F1_complex = complex_detection(model)
+                        PR_auc_pathway, F1_pathway = pathway_detection(model)
+                        epoch_recod.append(epoch)
+                        F1_complex_record.append(F1_complex)
+                        F1_pathway_record.append(F1_pathway)
+                        PR_auc_pathway_record.append(PR_auc_pathway)
+                        loss_record.append((loss.item()*N)/elements)
+                # writer.close()
             
+            root = 'D:/study/thesis/project/HBDM-main/ppi_results/models/'+name+'/'
+            # Check if the folder already exists
+            if not os.path.exists(root):
+                # Create the folder only if it doesn't exist
+                os.makedirs(root)
+                print(f"Folder '{root}' created.")
+            else:
+                print(f"Folder '{root}' already exists.")
+            record_path = root + 'records.pkl'
+            # Serialize and save the Tensor to the file
+            with open(record_path, 'wb') as file:
+                pickle.dump([epoch_recod,loss_record,F1_complex_record,F1_pathway_record,PR_auc_pathway_record], file)
+            # Close the file
+            file.close()
 
+            # Specify the variables to be saved
+            if args.W == 1 or args.W == 0:
+                if args.RE:
+                    variables_to_save = {
+                        'k_exp_dist': [tensor.detach().cpu().numpy() if not is_sparse(tensor) else tensor.to_dense().detach().cpu().numpy() for tensor in model.k_exp_dist],
+                        'final_idx': [tensor.detach().cpu().numpy() for tensor in model.final_idx],
+                        'general_cl_id': [tensor.detach().cpu().numpy() for tensor in model.general_cl_id],
+                        'general_mask': [tensor.detach().cpu().numpy() for tensor in model.general_mask],
+                        'RE':[tensor.detach().cpu().numpy() for tensor in model.gamma],
+                        'latent':[tensor.detach().cpu().numpy() for tensor in model.latent_z]}
+                else:
+                    variables_to_save = {
+                        'k_exp_dist': [tensor.detach().cpu().numpy() if not is_sparse(tensor) else tensor.to_dense().detach().cpu().numpy() for tensor in model.k_exp_dist],
+                        'final_idx': [tensor.detach().cpu().numpy() for tensor in model.final_idx],
+                        'general_cl_id': [tensor.detach().cpu().numpy() for tensor in model.general_cl_id],
+                        'general_mask': [tensor.detach().cpu().numpy() for tensor in model.general_mask],
+                        'latent':[tensor.detach().cpu().numpy() for tensor in model.latent_z]}
+            else:
+                if args.RE:
+                    variables_to_save = {
+                        'RE':[tensor.detach().cpu().numpy() for tensor in model.gamma],
+                        'latent':[tensor.detach().cpu().numpy() for tensor in model.latent_z]} 
+                else:
+                    variables_to_save = {'latent':[tensor.detach().cpu().numpy() for tensor in model.latent_z]} 
 
-
-root = 'D:/study/thesis/project/HBDM-main/ppi_results/models/'+name+'/'
-# Check if the folder already exists
-if not os.path.exists(root):
-    # Create the folder only if it doesn't exist
-    os.makedirs(root)
-    print(f"Folder '{root}' created.")
-else:
-    print(f"Folder '{root}' already exists.")
-
-
-def is_sparse(tensor):
-    return isinstance(tensor, torch.Tensor) and tensor.layout == torch.sparse_coo
-# Specify the variables to be saved
-if args.W == 1 or args.W == 0:
-    variables_to_save = {
-        'k_exp_dist': [tensor.detach().cpu().numpy() if not is_sparse(tensor) else tensor.to_dense().detach().cpu().numpy() for tensor in model.k_exp_dist],
-        'final_idx': [tensor.detach().cpu().numpy() for tensor in model.final_idx],
-        'general_cl_id': [tensor.detach().cpu().numpy() for tensor in model.general_cl_id],
-        'general_mask': [tensor.detach().cpu().numpy() for tensor in model.general_mask],
-        'RE':[tensor.detach().cpu().numpy() for tensor in model.gamma],
-        'latent':[tensor.detach().cpu().numpy() for tensor in model.latent_z]
-    }
-else:
-    variables_to_save = {
-        'RE':[tensor.detach().cpu().numpy() for tensor in model.gamma],
-        'latent':[tensor.detach().cpu().numpy() for tensor in model.latent_z]
-    }   
-
-# Loop through the variables and save them with their names as file names
-for var_name, var_data in variables_to_save.items():
-    file_path = os.path.join(root, var_name + '.pkl')
-    with open(file_path, 'wb') as f:
-        pickle.dump(var_data, f)
+            # Loop through the variables and save them with their names as file names
+            for var_name, var_data in variables_to_save.items():
+                file_path = os.path.join(root, var_name + '.pkl')
+                with open(file_path, 'wb') as f:
+                    pickle.dump(var_data, f)
 
 # Record the end time
 end_time = time.time()
