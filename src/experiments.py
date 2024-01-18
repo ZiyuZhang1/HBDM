@@ -5,6 +5,7 @@ import random
 from sklearn.neighbors import KDTree
 from sklearn.model_selection import KFold
 import matplotlib.pyplot as plt
+from sklearn import metrics
 
 def complex_detection(model):
     node_rep = [tensor.detach().cpu().numpy() for tensor in model.latent_z]
@@ -68,6 +69,81 @@ def complex_detection(model):
     avg_f1 = 2 * (avg_precision * avg_recall) / (avg_precision + avg_recall)
     return avg_f1
 
+def disgenet_detection(model):
+    node_rep = [tensor.detach().cpu().numpy() for tensor in model.latent_z]
+    node_rep = np.array(node_rep)
+    df_latent = pd.DataFrame()
+    for d in range(node_rep.shape[1]):
+        col_name = str(d+1)+'d'
+        df_latent[col_name] = node_rep.T[d]
+    df_latent['node'] = df_latent.index
+    df = df_latent
+
+    with open(r'D:\study\thesis\project\HBDM-main\data\disease\cad_node.pkl', 'rb') as file:
+        group_node = pickle.load(file)
+
+    k_values = [50,100,150,200,250,300]
+    #################################################################################################
+    # pathways_id = dict(sorted(pathways_id.items(), key=lambda item: item[1], reverse=True)[:10])
+    outlier = []
+    #################################################################################################
+
+    # for each eomplex, get precision and recall values of varing k
+    roc_ks = []
+    pr_ks = []
+
+    ## get final df: node, cluster, 1d, 2d, label
+    df['label'] = df['node'].apply(lambda x: 1 if x in group_node else 0)
+    # Set the index to match the values in column 'node'
+    df = df.set_index('node')
+    # Reset the index to its default integer index
+    df = df.reset_index()
+
+    kf = KFold(n_splits=5, shuffle=True, random_state=42)
+    for k in k_values:
+        k+=1
+        results = []
+
+        # Build a k-d tree from the points
+        kdtree = KDTree(df[[col for col in df.columns if col.endswith('d')]].to_numpy(), leaf_size=20)
+        for train_index, test_index in kf.split(group_node):
+            train_nodes = [group_node[i] for i in train_index]
+            test_nodes = [group_node[i] for i in test_index]
+            start = []
+            dist = []
+            neighbor = []
+
+            for i in train_nodes:
+                given_point = df[df['node']==i][[col for col in df.columns if col.endswith('d')]].to_numpy()
+                # Perform a k-NN search to find the k+1 nearest neighbors
+                distances, indices = kdtree.query(given_point, k=k)
+                start += (k-1)*[i]
+                dist += distances.reshape(-1).tolist()[1:]
+                neighbor += indices.reshape(-1).tolist()[1:]
+
+
+            neighbor_df = pd.DataFrame({'start': start, 'neighbor': neighbor, 'distance': dist})
+            neighbor_df = neighbor_df[~neighbor_df['neighbor'].isin(train_nodes)]
+            predict_df = neighbor_df['neighbor'].value_counts().to_frame()
+            predict_df.reset_index(inplace=True)
+            predict_df.rename(columns={'neighbor':'count','index':'neighbor'},inplace=True)
+            predict_df['true'] = predict_df.apply(lambda row: 1 if row['neighbor'] in test_nodes else 0, axis=1)
+            if len(predict_df[predict_df['true']==1])==0:
+                results.append([0, 0])
+            else:
+                predicted_positives = predict_df['count']
+                true_positives = predict_df['true']
+                precision, recall, thresholds = metrics.precision_recall_curve(true_positives,predicted_positives)
+                roc,pr= metrics.roc_auc_score(true_positives,predicted_positives),metrics.auc(recall,precision)
+                results.append([roc,pr])
+        results = np.array(results)
+        roc = np.mean(results[:, 0])
+        pr = np.mean(results[:, 1])
+        roc_ks.append(roc)
+        pr_ks.append(pr)
+
+    return roc_ks,pr_ks
+
 def pathway_detection(model):
     node_rep = [tensor.detach().cpu().numpy() for tensor in model.latent_z]
     node_rep = np.array(node_rep)
@@ -82,7 +158,7 @@ def pathway_detection(model):
         pathways_id = pickle.load(file)
 
     k_values = [50,100,150,200,250,300]
-    f1_pathways= []
+    roc_pathways= []
     prauc_pathways=[] 
     #################################################################################################
     pathways_id = dict(sorted(pathways_id.items(), key=lambda item: item[1], reverse=True)[:10])
@@ -90,10 +166,9 @@ def pathway_detection(model):
     #################################################################################################
 
     for pathway in pathways_id:
-        print(pathway)
         group_node = pathways_id[pathway]
         # for each eomplex, get precision and recall values of varing k
-        f1_ks = []
+        roc_ks = []
         prauc_ks = []
 
         ## get final df: node, cluster, 1d, 2d, label
@@ -137,20 +212,46 @@ def pathway_detection(model):
                 else:
                     predicted_positives = predict_df['count']
                     true_positives = predict_df['true']
-                    results.append(results_f1_aucpr(predicted_positives,true_positives))
+                    precision, recall, thresholds = metrics.precision_recall_curve(true_positives,predicted_positives)
+                    roc,pr= metrics.roc_auc_score(true_positives,predicted_positives),metrics.auc(recall,precision)
+                    results.append([roc,pr])
             results = np.array(results)
-            f1 = np.mean(results[:, 0])
-            auc = np.mean(results[:, 1])
-            f1_ks.append(f1)
-            prauc_ks.append(auc)
-        f1_pathways.append(f1_ks)
+            roc = np.mean(results[:, 0])
+            pr = np.mean(results[:, 1])
+            roc_ks.append(roc)
+            prauc_ks.append(pr)
+        roc_pathways.append(roc_ks)
         prauc_pathways.append(prauc_ks)
-        if f1_ks.count(0) >= 4:
+        if roc_ks.count(0) >= 4:
             pathway_outlier.append(pathway)
-    avg_f1 = np.array(f1_pathways).mean(axis=0)
-    avg_auc = np.array(prauc_pathways).mean(axis=0)
+    avg_roc = np.array(roc_pathways).mean(axis=0)
+    avg_pr = np.array(prauc_pathways).mean(axis=0)
     print('pathway_outliers: ',len(pathway_outlier))
-    return avg_auc,avg_f1
+    return avg_roc,avg_pr
+
+# ############## disgenet test random
+# import random
+# exp = []
+# for i in range(10000):
+#     # Total number of nodes and positive nodes
+#     total_nodes = 307*[1]+(17530-307)*[0]
+
+#     # Number of nodes to randomly choose
+#     num_nodes_chosen = 50
+
+#     # Simulating random selection of nodes
+#     randomly_chosen_nodes = random.sample(total_nodes, num_nodes_chosen)
+
+#     # Assuming you have the true positives (TP) and false positives (FP) for the selected 50 nodes
+#     # Replace these values with your actual experiment results
+#     TP = randomly_chosen_nodes.count(1) # Number of true positives
+#     FP = randomly_chosen_nodes.count(0)   # Number of false positives
+
+#     # Calculating precision
+#     precision = TP / (TP + FP)
+#     exp.append(precision)
+# sum(exp)/len(exp) # 0.017448000000000796
+
 
 def results_f1_aucpr(predicted_positives,true_positives,plot=False):
     # Example usage

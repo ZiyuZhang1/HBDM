@@ -18,9 +18,9 @@ parser.add_argument('--RE', type=eval,
                       choices=[True, False], default=True,
                     help='activates random effects')
 parser.add_argument('--W', type=eval, 
-                      choices=[0,1,2], default=2,
+                      choices=[0,1,2], default=1,
                     help='activates random effects')
-parser.add_argument('--epochs', type=int, default=1000, metavar='N',
+parser.add_argument('--epochs', type=int, default=15000, metavar='N',
                     help='number of epochs for training (default: 15K)')
 
 ####### keep
@@ -33,7 +33,7 @@ parser.add_argument('--cuda', type=eval,
                     help='CUDA training')
 
 parser.add_argument('--LP',type=eval, 
-                      choices=[True, False], default=True,
+                      choices=[True, False], default=False,
                     help='performs link prediction')
 
 parser.add_argument('--D', type=int, default=[2]
@@ -73,7 +73,7 @@ elif args.W == 0 and args.RE:
 elif args.W == 0:
     from HBDM import LSM
 
-from experiments import complex_detection,pathway_detection
+from experiments import complex_detection,pathway_detection,disgenet_detection
     
 start_time = time.time() 
 def is_sparse(tensor):
@@ -108,10 +108,12 @@ if __name__ == "__main__":
             epoch_recod = []
             loss_record = []
             F1_complex_record = []
-            F1_pathway_record = []
-            PR_auc_pathway_record = []
+            roc_pathway_record = []
+            PR_pathway_record = []
             link_pre_roc_record = []
             link_pre_pr_record = []
+            cad_pr_record = []
+            cad_roc_record = []
             if args.W == 1 or args.W == 0:
                 if args.W == 1:
                     sparse_i = []
@@ -153,13 +155,19 @@ if __name__ == "__main__":
                             print('AUC-PR:',pr)
                             link_pre_roc_record.append(roc)
                             link_pre_pr_record.append(pr)
-                        # F1_complex = complex_detection(model)
-                        # PR_auc_pathway, F1_pathway = pathway_detection(model)
-                        # epoch_recod.append(epoch)
-                        # F1_complex_record.append(F1_complex)
-                        # F1_pathway_record.append(F1_pathway)
-                        # PR_auc_pathway_record.append(PR_auc_pathway)
-                        # loss_record.append((loss.item()*N)/elements)
+                        cadroc,cadpr = disgenet_detection(model)
+                        cad_roc_record.append(cadroc)
+                        cad_pr_record.append(cadpr)
+
+                        F1_complex = complex_detection(model)
+                        F1_complex_record.append(F1_complex)
+
+                        roc_pathway, pr_pathway = pathway_detection(model)
+                        roc_pathway_record.append(roc_pathway)
+                        PR_pathway_record.append(pr_pathway) 
+
+                        epoch_recod.append(epoch)
+                        loss_record.append((loss.item()*N)/elements)
                 # writer.close()
             elif args.W == 2:
 
@@ -188,13 +196,19 @@ if __name__ == "__main__":
                             print('AUC-PR:',pr)
                             link_pre_roc_record.append(roc)
                             link_pre_pr_record.append(pr)
-                        # F1_complex = complex_detection(model)
-                        # PR_auc_pathway, F1_pathway = pathway_detection(model)
-                        # epoch_recod.append(epoch)
-                        # F1_complex_record.append(F1_complex)
-                        # F1_pathway_record.append(F1_pathway)
-                        # PR_auc_pathway_record.append(PR_auc_pathway)
-                        # loss_record.append((loss.item()*N)/elements)
+                        cadroc,cadpr = disgenet_detection(model)
+                        cad_roc_record.append(cadroc)
+                        cad_pr_record.append(cadpr)
+
+                        F1_complex = complex_detection(model)
+                        F1_complex_record.append(F1_complex)
+
+                        roc_pathway, pr_pathway = pathway_detection(model)
+                        roc_pathway_record.append(roc_pathway)
+                        PR_pathway_record.append(pr_pathway) 
+
+                        epoch_recod.append(epoch)
+                        loss_record.append((loss.item()*N)/elements)
                 # writer.close()
             
             root = 'D:/study/thesis/project/HBDM-main/ppi_results/models/'+name+'/'
@@ -207,15 +221,15 @@ if __name__ == "__main__":
                 print(f"Folder '{root}' already exists.")
             record_path = root + 'records.pkl'
             # Serialize and save the Tensor to the file
-            # with open(record_path, 'wb') as file:
-            #     pickle.dump([epoch_recod,loss_record,F1_complex_record,F1_pathway_record,PR_auc_pathway_record,link_pre_roc_record, link_pre_pr_record], file)
-            # # Close the file
-            # file.close()
-
             with open(record_path, 'wb') as file:
-                pickle.dump([link_pre_roc_record, link_pre_pr_record], file)
+                pickle.dump([epoch_recod,loss_record,F1_complex_record,roc_pathway_record,PR_pathway_record], file)
             # Close the file
             file.close()
+
+            # with open(record_path, 'wb') as file:
+            #     pickle.dump([link_pre_roc_record, link_pre_pr_record], file)
+            # # Close the file
+            # file.close()
 
             # Specify the variables to be saved
             if args.W == 1 or args.W == 0:
