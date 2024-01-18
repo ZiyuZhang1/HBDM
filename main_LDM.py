@@ -15,7 +15,7 @@ print(sys.path)
 parser = argparse.ArgumentParser(description='Hierarchical Block Distance Model')
 #####for now changed 
 parser.add_argument('--RE', type=eval, 
-                      choices=[True, False], default=False,
+                      choices=[True, False], default=True,
                     help='activates random effects')
 parser.add_argument('--W', type=eval, 
                       choices=[0,1,2], default=2,
@@ -33,17 +33,17 @@ parser.add_argument('--cuda', type=eval,
                     help='CUDA training')
 
 parser.add_argument('--LP',type=eval, 
-                      choices=[True, False], default=False,
+                      choices=[True, False], default=True,
                     help='performs link prediction')
 
-parser.add_argument('--D', type=int, default=[2,8]
+parser.add_argument('--D', type=int, default=[2]
                     , metavar='N',
                     help='dimensionality of the embeddings (default: 2)')
 
 parser.add_argument('--lr', type=int, default=0.1, metavar='N',
                     help='learning rate for the ADAM optimizer (default: 0.1)')
 # changed dataset
-parser.add_argument('--dataset', type=str, default='ppi',
+parser.add_argument('--dataset', type=str, default='ppi_linkpredict',
                     
                     help='dataset to apply HBDM')
 
@@ -91,25 +91,28 @@ if __name__ == "__main__":
             name = f"Dataset-{args.dataset}--RE-{args.RE}--W-{args.W}--Epochs-{args.epochs}--D-{args.D}--RH-{args.RH}--LR-{args.lr}--LP-{args.LP}--CUDA-{args.cuda}"
             if args.LP:
                 # file denoting rows i of missing links, with i<j 
-                sparse_i_rem=torch.from_numpy(np.loadtxt("./datasets/"+dataset+'/sparse_i_rem.txt')).long().to(device)
+                sparse_i_rem=torch.from_numpy(np.loadtxt("./data/datasets/"+dataset+'/sparse_i_rem.txt')).long().to(device)
                 # file denoting columns j of missing links, with i<j
-                sparse_j_rem=torch.from_numpy(np.loadtxt("./datasets/"+dataset+'/sparse_j_rem.txt')).long().to(device)
+                sparse_j_rem=torch.from_numpy(np.loadtxt("./data/datasets/"+dataset+'/sparse_j_rem.txt')).long().to(device)
                 # file denoting negative sample rows i, with i<j
-                non_sparse_i=torch.from_numpy(np.loadtxt("./datasets/"+dataset+'/non_sparse_i.txt')).long().to(device)
+                non_sparse_i=torch.from_numpy(np.loadtxt("./data/datasets/"+dataset+'/non_sparse_i.txt')).long().to(device)
                 # file denoting negative sample columns, with i<j
-                non_sparse_j=torch.from_numpy(np.loadtxt("./datasets/"+dataset+'/non_sparse_j.txt')).long().to(device)
+                non_sparse_j=torch.from_numpy(np.loadtxt("./data/datasets/"+dataset+'/non_sparse_j.txt')).long().to(device)
                
             else:
                 non_sparse_i=None
                 non_sparse_j=None
                 sparse_i_rem=None
                 sparse_j_rem=None
+            
+            epoch_recod = []
+            loss_record = []
+            F1_complex_record = []
+            F1_pathway_record = []
+            PR_auc_pathway_record = []
+            link_pre_roc_record = []
+            link_pre_pr_record = []
             if args.W == 1 or args.W == 0:
-                epoch_recod = []
-                loss_record = []
-                F1_complex_record = []
-                F1_pathway_record = []
-                PR_auc_pathway_record = []
                 if args.W == 1:
                     sparse_i = []
                     sparse_j = []
@@ -148,20 +151,17 @@ if __name__ == "__main__":
                             roc,pr=model.link_prediction() 
                             print('AUC-ROC:',roc)
                             print('AUC-PR:',pr)
-                        F1_complex = complex_detection(model)
-                        PR_auc_pathway, F1_pathway = pathway_detection(model)
-                        epoch_recod.append(epoch)
-                        F1_complex_record.append(F1_complex)
-                        F1_pathway_record.append(F1_pathway)
-                        PR_auc_pathway_record.append(PR_auc_pathway)
-                        loss_record.append((loss.item()*N)/elements)
+                            link_pre_roc_record.append(roc)
+                            link_pre_pr_record.append(pr)
+                        # F1_complex = complex_detection(model)
+                        # PR_auc_pathway, F1_pathway = pathway_detection(model)
+                        # epoch_recod.append(epoch)
+                        # F1_complex_record.append(F1_complex)
+                        # F1_pathway_record.append(F1_pathway)
+                        # PR_auc_pathway_record.append(PR_auc_pathway)
+                        # loss_record.append((loss.item()*N)/elements)
                 # writer.close()
             elif args.W == 2:
-                epoch_recod = []
-                loss_record = []
-                F1_complex_record = []
-                F1_pathway_record = []
-                PR_auc_pathway_record = []
 
                 sparse_i=torch.from_numpy(np.loadtxt("./data/datasets/"+dataset+'/sparse_i.txt')).long().to(device)
                 sparse_j=torch.from_numpy(np.loadtxt("./data/datasets/"+dataset+'/sparse_j.txt')).long().to(device)
@@ -182,13 +182,19 @@ if __name__ == "__main__":
                     # writer.add_scalar("loss", (loss.detach()*N)/elements, epoch)
                     if epoch%1000==0:
                         print('Iteration Number:', epoch, 'Loss:',(loss.item()*N)/elements)
-                        F1_complex = complex_detection(model)
-                        PR_auc_pathway, F1_pathway = pathway_detection(model)
-                        epoch_recod.append(epoch)
-                        F1_complex_record.append(F1_complex)
-                        F1_pathway_record.append(F1_pathway)
-                        PR_auc_pathway_record.append(PR_auc_pathway)
-                        loss_record.append((loss.item()*N)/elements)
+                        if args.LP:
+                            roc,pr=model.link_prediction() 
+                            print('AUC-ROC:',roc)
+                            print('AUC-PR:',pr)
+                            link_pre_roc_record.append(roc)
+                            link_pre_pr_record.append(pr)
+                        # F1_complex = complex_detection(model)
+                        # PR_auc_pathway, F1_pathway = pathway_detection(model)
+                        # epoch_recod.append(epoch)
+                        # F1_complex_record.append(F1_complex)
+                        # F1_pathway_record.append(F1_pathway)
+                        # PR_auc_pathway_record.append(PR_auc_pathway)
+                        # loss_record.append((loss.item()*N)/elements)
                 # writer.close()
             
             root = 'D:/study/thesis/project/HBDM-main/ppi_results/models/'+name+'/'
@@ -201,8 +207,13 @@ if __name__ == "__main__":
                 print(f"Folder '{root}' already exists.")
             record_path = root + 'records.pkl'
             # Serialize and save the Tensor to the file
+            # with open(record_path, 'wb') as file:
+            #     pickle.dump([epoch_recod,loss_record,F1_complex_record,F1_pathway_record,PR_auc_pathway_record,link_pre_roc_record, link_pre_pr_record], file)
+            # # Close the file
+            # file.close()
+
             with open(record_path, 'wb') as file:
-                pickle.dump([epoch_recod,loss_record,F1_complex_record,F1_pathway_record,PR_auc_pathway_record], file)
+                pickle.dump([link_pre_roc_record, link_pre_pr_record], file)
             # Close the file
             file.close()
 

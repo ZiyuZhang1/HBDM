@@ -109,3 +109,15 @@ class LSM(nn.Module,Tree_kmeans_recursion,Spectral_clustering_init):
         
         return square_loss_sparse
     
+    def link_prediction(self):
+        with torch.no_grad():
+            z_pdist_miss=(((self.latent_z[self.removed_i]-self.latent_z[self.removed_j])**2).sum(-1))**0.5
+            logit_u_miss=-z_pdist_miss+self.gamma[self.removed_i]+self.gamma[self.removed_j]
+            rates=torch.exp(logit_u_miss)
+
+            target=torch.cat((torch.zeros(self.non_sparse_i_idx_removed.shape[0]),torch.ones(self.sparse_i_idx_removed.shape[0])))
+            precision, recall, thresholds = metrics.precision_recall_curve(target.cpu().data.numpy(), rates.cpu().data.numpy())
+
+           
+        return metrics.roc_auc_score(target.cpu().data.numpy(),rates.cpu().data.numpy()),metrics.auc(recall,precision)
+    
