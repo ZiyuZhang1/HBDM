@@ -12,6 +12,7 @@ print(sys.path)
 
 sys.path.append('./src/')
 print(sys.path)
+
 parser = argparse.ArgumentParser(description='Hierarchical Block Distance Model')
 #####for now changed 
 parser.add_argument('--RE', type=eval, 
@@ -20,7 +21,7 @@ parser.add_argument('--RE', type=eval,
 parser.add_argument('--W', type=eval, 
                       choices=[0,1,2], default=1,
                     help='activates random effects')
-parser.add_argument('--epochs', type=int, default=15000, metavar='N',
+parser.add_argument('--epochs', type=int, default=6000, metavar='N',
                     help='number of epochs for training (default: 15K)')
 
 ####### keep
@@ -36,14 +37,14 @@ parser.add_argument('--LP',type=eval,
                       choices=[True, False], default=False,
                     help='performs link prediction')
 
-parser.add_argument('--D', type=int, default=[2]
+parser.add_argument('--D', type=int, default=[8]
                     , metavar='N',
                     help='dimensionality of the embeddings (default: 2)')
 
 parser.add_argument('--lr', type=int, default=0.1, metavar='N',
                     help='learning rate for the ADAM optimizer (default: 0.1)')
 # changed dataset
-parser.add_argument('--dataset', type=str, default='ppi_linkpredict',
+parser.add_argument('--dataset', type=str, default='ppi',
                     
                     help='dataset to apply HBDM')
 
@@ -88,7 +89,7 @@ if __name__ == "__main__":
     datasets=[args.dataset]
     for dataset in datasets:
         for latent_dim in latent_dims:
-            name = f"Dataset-{args.dataset}--RE-{args.RE}--W-{args.W}--Epochs-{args.epochs}--D-{args.D}--RH-{args.RH}--LR-{args.lr}--LP-{args.LP}--CUDA-{args.cuda}"
+            name = f"Dataset-{args.dataset}--RE-{args.RE}--W-{args.W}--Epochs-{args.epochs}--D-{latent_dim}--RH-{args.RH}--LR-{args.lr}--LP-{args.LP}--CUDA-{args.cuda}"
             if args.LP:
                 # file denoting rows i of missing links, with i<j 
                 sparse_i_rem=torch.from_numpy(np.loadtxt("./data/datasets/"+dataset+'/sparse_i_rem.txt')).long().to(device)
@@ -145,6 +146,8 @@ if __name__ == "__main__":
                     optimizer.zero_grad() # clear the gradients.   
                     loss.backward() # backpropagate
                     optimizer.step() # update the weights
+                    epoch_recod.append(epoch)
+                    loss_record.append((loss.item()*N)/elements)                    
                     # writer.add_scalar("loss", (loss.detach()*N)/elements, epoch)
                     if epoch%1000==0:
                         print('Iteration Number:', epoch)
@@ -158,16 +161,15 @@ if __name__ == "__main__":
                         cadroc,cadpr = disgenet_detection(model)
                         cad_roc_record.append(cadroc)
                         cad_pr_record.append(cadpr)
+                        print(cad_roc_record,cad_pr_record)
 
-                        F1_complex = complex_detection(model)
-                        F1_complex_record.append(F1_complex)
+                        # F1_complex = complex_detection(model)
+                        # F1_complex_record.append(F1_complex)
 
-                        roc_pathway, pr_pathway = pathway_detection(model)
-                        roc_pathway_record.append(roc_pathway)
-                        PR_pathway_record.append(pr_pathway) 
+                        # roc_pathway, pr_pathway = pathway_detection(model)
+                        # roc_pathway_record.append(roc_pathway)
+                        # PR_pathway_record.append(pr_pathway) 
 
-                        epoch_recod.append(epoch)
-                        loss_record.append((loss.item()*N)/elements)
                 # writer.close()
             elif args.W == 2:
 
@@ -188,6 +190,8 @@ if __name__ == "__main__":
                     loss.backward() # backpropagate
                     optimizer.step() # update the weights
                     # writer.add_scalar("loss", (loss.detach()*N)/elements, epoch)
+                    epoch_recod.append(epoch)
+                    loss_record.append((loss.item()*N)/elements)
                     if epoch%1000==0:
                         print('Iteration Number:', epoch, 'Loss:',(loss.item()*N)/elements)
                         if args.LP:
@@ -200,15 +204,14 @@ if __name__ == "__main__":
                         cad_roc_record.append(cadroc)
                         cad_pr_record.append(cadpr)
 
-                        F1_complex = complex_detection(model)
-                        F1_complex_record.append(F1_complex)
+                        # F1_complex = complex_detection(model)
+                        # F1_complex_record.append(F1_complex)
 
-                        roc_pathway, pr_pathway = pathway_detection(model)
-                        roc_pathway_record.append(roc_pathway)
-                        PR_pathway_record.append(pr_pathway) 
+                        # roc_pathway, pr_pathway = pathway_detection(model)
+                        # roc_pathway_record.append(roc_pathway)
+                        # PR_pathway_record.append(pr_pathway) 
 
-                        epoch_recod.append(epoch)
-                        loss_record.append((loss.item()*N)/elements)
+
                 # writer.close()
             
             root = 'D:/study/thesis/project/HBDM-main/ppi_results/models/'+name+'/'
@@ -222,9 +225,13 @@ if __name__ == "__main__":
             record_path = root + 'records.pkl'
             # Serialize and save the Tensor to the file
             with open(record_path, 'wb') as file:
-                pickle.dump([epoch_recod,loss_record,F1_complex_record,roc_pathway_record,PR_pathway_record], file)
+                pickle.dump([epoch_recod,loss_record,cad_roc_record,cad_pr_record], file)
             # Close the file
             file.close()
+            # with open(record_path, 'wb') as file:
+            #     pickle.dump([epoch_recod,loss_record], file)
+            # # Close the file
+            # file.close()
 
             # with open(record_path, 'wb') as file:
             #     pickle.dump([link_pre_roc_record, link_pre_pr_record], file)

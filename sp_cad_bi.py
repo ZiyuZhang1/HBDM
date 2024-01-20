@@ -24,18 +24,18 @@ G = nx.from_pandas_edgelist(network, source='node1', target='node2', edge_attr='
 # network['10level'] = pd.cut(network['combined_score'], bins=bins, labels=labels, include_lowest=True)
 # network['10level'] = network['10level'].apply(lambda x: -np.log(x/1000))
 # levelg = nx.from_pandas_edgelist(network, source='node1', target='node2', edge_attr='10level', create_using=nx.Graph)
-record_path = r'D:\study\thesis\project\HBDM-main\data\cad_neighbors_temp_gg.pkl'
-temp_neighbor_path = r'D:\study\thesis\project\HBDM-main\data\cad_neighbors_temp_gg.csv'
+record_path =  r'D:\study\thesis\project\HBDM-main\data\cad_neighbors_temp_bi.pkl'
+temp_neighbor_path = r'D:\study\thesis\project\HBDM-main\data\cad_neighbors_temp_bi.csv'
 with open(r'D:\study\thesis\project\HBDM-main\data\disease\cad_node.pkl', 'rb') as file:
     group_node = pickle.load(file)
-
+group_node = group_node
 
 ks = [3,5,10,25,50,75,100]
 
 def get_neighbor_list(args):
     start_point, G, weight, k_max = args
 
-    shortest_paths_weighted = nx.shortest_path_length(G, source=start_point, weight=weight)
+    shortest_paths_weighted = nx.shortest_path_length(G, source=start_point)
     start=k_max * [start_point]
 
     neighborlist = list(shortest_paths_weighted.keys())

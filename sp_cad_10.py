@@ -12,20 +12,22 @@ import multiprocessing as mp
 ########## load network (continuous, 10level)
 network = pd.read_csv(r'D:\study\thesis\project\HBDM-main\data\ppi_connect.csv')
 
-string_score_transform = lambda x: -np.log(x/1000)
-network['continuous'] = network['combined_score'].apply(string_score_transform)
-G = nx.from_pandas_edgelist(network, source='node1', target='node2', edge_attr='continuous', create_using=nx.Graph)
+# string_score_transform = lambda x: -np.log(x/1000)
+# 10-(sparse_w*10).round()
+# network['continuous'] = network['combined_score'].apply(string_score_transform)
+# G = nx.from_pandas_edgelist(network, source='node1', target='node2', edge_attr='continuous', create_using=nx.Graph)
 
-# bins = [149, 199, 299, 399, 499, 599, 699, 799, 899, 999]
-# # labels = [9, 8, 7, 6, 5, 4, 3, 2, 1]
-# labels = [100,200,300,400,500,600,700,800,900]
+bins = [149, 199, 299, 399, 499, 599, 699, 799, 899, 999]
+# labels = [9, 8, 7, 6, 5, 4, 3, 2, 1]
+labels = [100,200,300,400,500,600,700,800,900]
 
-# # Use pd.cut to categorize the data into levels
-# network['10level'] = pd.cut(network['combined_score'], bins=bins, labels=labels, include_lowest=True)
-# network['10level'] = network['10level'].apply(lambda x: -np.log(x/1000))
-# levelg = nx.from_pandas_edgelist(network, source='node1', target='node2', edge_attr='10level', create_using=nx.Graph)
-record_path = r'D:\study\thesis\project\HBDM-main\data\cad_neighbors_temp_gg.pkl'
-temp_neighbor_path = r'D:\study\thesis\project\HBDM-main\data\cad_neighbors_temp_gg.csv'
+# Use pd.cut to categorize the data into levels
+network['10level'] = pd.cut(network['combined_score'], bins=bins, labels=labels, include_lowest=True)
+network['10level'] = network['10level'].apply(lambda x: -np.log(x/1000))
+G = nx.from_pandas_edgelist(network, source='node1', target='node2', edge_attr='10level', create_using=nx.Graph)
+
+record_path =  r'D:\study\thesis\project\HBDM-main\data\cad_neighbors_temp_10.pkl'
+temp_neighbor_path = r'D:\study\thesis\project\HBDM-main\data\cad_neighbors_temp_10.csv'
 with open(r'D:\study\thesis\project\HBDM-main\data\disease\cad_node.pkl', 'rb') as file:
     group_node = pickle.load(file)
 
@@ -35,7 +37,7 @@ ks = [3,5,10,25,50,75,100]
 def get_neighbor_list(args):
     start_point, G, weight, k_max = args
 
-    shortest_paths_weighted = nx.shortest_path_length(G, source=start_point, weight=weight)
+    shortest_paths_weighted = nx.shortest_path_length(G, source=start_point,weight = weight)
     start=k_max * [start_point]
 
     neighborlist = list(shortest_paths_weighted.keys())
@@ -55,7 +57,7 @@ if __name__ == "__main__":
     mp.freeze_support()
 
     pool = mp.Pool(processes=num_processes)
-    args_list = [(node, G, 'continuous', max(ks)) for node in group_node]
+    args_list = [(node, G, '10level', max(ks)) for node in group_node]
     
     results = pool.map(parallel_worker, args_list)
     pool.close()
@@ -73,18 +75,18 @@ if __name__ == "__main__":
     neighbor_df = pd.DataFrame({'start': starts, 'neighbor': neighbors, 'distance': dists})
 
     neighbor_df.to_csv(temp_neighbor_path,index=False)
-
+    kfresults = []
     kf = KFold(n_splits=5, shuffle=True, random_state=42)
     for train_index, test_index in kf.split(group_node):
         train_nodes = [group_node[i] for i in train_index]
         test_nodes = [group_node[i] for i in test_index]
-        kfresults = []
+        
 
         kfneighbor_df = neighbor_df[neighbor_df['start'].isin(train_nodes)]
-
+        results = []
         groups = kfneighbor_df.groupby('start')
         for k in ks:
-            results = []
+            
             for i, (key, subdf) in enumerate(groups):
                 subdf = subdf.head(k)
                 if i == 0:
@@ -106,8 +108,10 @@ if __name__ == "__main__":
                 results.append([roc,pr])
         kfresults.append(results)
     kfresults = np.array(kfresults)
-    roc_ks = np.mean(kfresults[:, 0::2], axis=0)
-    pr_ks = np.mean(kfresults[:, 1::2], axis=0)
+    all_res = np.mean(kfresults, axis=0)
+    roc_ks = all_res[:, 0]
+    pr_ks = all_res[:, 1]
+    roc_ks,pr_ks
     print([roc_ks,pr_ks])
     with open(record_path, 'wb') as file:
         pickle.dump([roc_ks, pr_ks], file)

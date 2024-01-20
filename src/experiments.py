@@ -71,18 +71,30 @@ def complex_detection(model):
 
 def disgenet_detection(model):
     node_rep = [tensor.detach().cpu().numpy() for tensor in model.latent_z]
+    # node_rep = np.array(node_rep)
+    # df_latent = pd.DataFrame()
+    # for d in range(node_rep.shape[1]):
+    #     col_name = str(d+1)+'d'
+    #     df_latent[col_name] = node_rep.T[d]
+    # df_latent['node'] = df_latent.index
+    # df = df_latent
+    #######################################
     node_rep = np.array(node_rep)
+    re = [tensor.detach().cpu().numpy() for tensor in model.gamma]
+    re = np.array(re)
+    data = np.concatenate((node_rep, re[:, np.newaxis]), axis=1)
     df_latent = pd.DataFrame()
-    for d in range(node_rep.shape[1]):
+    for d in range(data.shape[1]):
         col_name = str(d+1)+'d'
-        df_latent[col_name] = node_rep.T[d]
+        df_latent[col_name] = data.T[d]
     df_latent['node'] = df_latent.index
     df = df_latent
-
+    ########################################
     with open(r'D:\study\thesis\project\HBDM-main\data\disease\cad_node.pkl', 'rb') as file:
         group_node = pickle.load(file)
 
-    k_values = [50,100,150,200,250,300]
+    # k_values = [10,20,30,40,50]
+    k_values = [50,100,150,200,250,300,350,400] 
     #################################################################################################
     # pathways_id = dict(sorted(pathways_id.items(), key=lambda item: item[1], reverse=True)[:10])
     outlier = []
