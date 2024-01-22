@@ -3,6 +3,7 @@ import numpy as np
 import pickle
 from sklearn import metrics
 from multiprocessing import Pool, freeze_support
+import multiprocessing as mp
 
 root = 'D:/study/thesis/project/HBDM-main/data/datasets/ppi_linkpredict/'
 record_path = r'D:\study\thesis\project\HBDM-main\ppi_results\sp_results\sp_lp\sp_lp_bi.pkl'
@@ -41,7 +42,7 @@ true_label = np.array([1]*sparse_i_rem.shape[0]+[0]*non_sparse_i.shape[0])
 def calculate_shortest_path(args):
     G, source, target = args
     try:
-        return nx.shortest_path_length(G, source=source, target=target)
+        return 1/(nx.shortest_path_length(G, source=source, target=target))
     except nx.NetworkXNoPath:
         return 0
 
@@ -51,16 +52,27 @@ if __name__ == '__main__':
     root = 'D:/study/thesis/project/HBDM-main/data/datasets/ppi_linkpredict/'
 
     # Set the number of processes
-    num_processes = 4  # You can adjust this based on your system's capabilities
+    num_processes = mp.cpu_count()  # You can adjust this based on your system's capabilities
     args_list = [(G, source, target) for source, target in zip(test_i, test_j)]
 
     # Use multiprocessing Pool to parallelize the computation
     with Pool(num_processes) as pool:
         predict_label = pool.map(calculate_shortest_path, args_list)
-
+    # with open(record_path, 'wb') as file:
+    #     pickle.dump([true_label, predict_label], file)
+    # Close the file
+    # file.close()    
     # Now, the predict_label list contains the results
     precision, recall, thresholds = metrics.precision_recall_curve(true_label,predict_label)
     roc,pr= metrics.roc_auc_score(true_label,predict_label),metrics.auc(recall,precision)
+    with open(r'D:\study\thesis\project\HBDM-main\ppi_results\sp_results\sp_lp\sp_lp_bi.pkl', 'rb') as file:
+        splpbi = pickle.load(file)
+
+    if np.all(np.array(true_label) == np.array(splpbi[0])):
+        print('same true')
+    if np.all(np.array(predict_label) == np.array(splpbi[1])):
+        print('same pre')
+    checkroc = metrics.roc_auc_score(splpbi[0],splpbi[1])
     with open(record_path, 'wb') as file:
         pickle.dump([roc, pr], file)
     # Close the file

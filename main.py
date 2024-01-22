@@ -17,7 +17,7 @@ parser.add_argument('--RE', type=eval,
                       choices=[True, False], default=True,
                     help='activates random effects')
 parser.add_argument('--W', type=eval, 
-                      choices=[True, False], default=False,
+                      choices=[True, False], default=True,
                     help='activates random effects')
 parser.add_argument('--epochs', type=int, default=15000, metavar='N',
                     help='number of epochs for training (default: 15K)')
@@ -35,14 +35,14 @@ parser.add_argument('--LP',type=eval,
                       choices=[True, False], default=False,
                     help='performs link prediction')
 
-parser.add_argument('--D', type=int, default=4
+parser.add_argument('--D', type=int, default=7
                     , metavar='N',
                     help='dimensionality of the embeddings (default: 2)')
 
 parser.add_argument('--lr', type=int, default=0.1, metavar='N',
                     help='learning rate for the ADAM optimizer (default: 0.1)')
 # changed dataset
-parser.add_argument('--dataset', type=str, default='ppi',
+parser.add_argument('--dataset', type=str, default='sc_vsmc_hv',
                     help='dataset to apply HBDM')
 
 

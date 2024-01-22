@@ -21,7 +21,7 @@ parser.add_argument('--RE', type=eval,
 parser.add_argument('--W', type=eval, 
                       choices=[0,1,2], default=1,
                     help='activates random effects')
-parser.add_argument('--epochs', type=int, default=6000, metavar='N',
+parser.add_argument('--epochs', type=int, default=15000, metavar='N',
                     help='number of epochs for training (default: 15K)')
 
 ####### keep
@@ -37,14 +37,14 @@ parser.add_argument('--LP',type=eval,
                       choices=[True, False], default=False,
                     help='performs link prediction')
 
-parser.add_argument('--D', type=int, default=[8]
+parser.add_argument('--D', type=int, default=[2,4,8]
                     , metavar='N',
                     help='dimensionality of the embeddings (default: 2)')
 
 parser.add_argument('--lr', type=int, default=0.1, metavar='N',
                     help='learning rate for the ADAM optimizer (default: 0.1)')
 # changed dataset
-parser.add_argument('--dataset', type=str, default='ppi',
+parser.add_argument('--dataset', type=str, default='sc_vsmc_hv',
                     
                     help='dataset to apply HBDM')
 
@@ -81,15 +81,16 @@ def is_sparse(tensor):
     return isinstance(tensor, torch.Tensor) and tensor.layout == torch.sparse_coo
 
 if __name__ == "__main__":
-    # from torch.utils.tensorboard import SummaryWriter
+    from torch.utils.tensorboard import SummaryWriter
     # name = 'NB_Dataset-ppi--RE-True--W-2--Epochs-15000--D-4--RH-25--LR-0.1--LP-False--CUDA-True'
-    # writer = SummaryWriter(log_dir=r"D:\study\thesis\project\HBDM-main\ppi_results\training_curve\{}".format(name))
+    
     
     latent_dims=args.D
     datasets=[args.dataset]
     for dataset in datasets:
         for latent_dim in latent_dims:
             name = f"Dataset-{args.dataset}--RE-{args.RE}--W-{args.W}--Epochs-{args.epochs}--D-{latent_dim}--RH-{args.RH}--LR-{args.lr}--LP-{args.LP}--CUDA-{args.cuda}"
+            writer = SummaryWriter(log_dir=r"D:\study\thesis\project\HBDM-main\ppi_results\training_curve\{}".format(name))
             if args.LP:
                 # file denoting rows i of missing links, with i<j 
                 sparse_i_rem=torch.from_numpy(np.loadtxt("./data/datasets/"+dataset+'/sparse_i_rem.txt')).long().to(device)
@@ -148,7 +149,7 @@ if __name__ == "__main__":
                     optimizer.step() # update the weights
                     epoch_recod.append(epoch)
                     loss_record.append((loss.item()*N)/elements)                    
-                    # writer.add_scalar("loss", (loss.detach()*N)/elements, epoch)
+                    writer.add_scalar("loss", (loss.detach()*N)/elements, epoch)
                     if epoch%1000==0:
                         print('Iteration Number:', epoch)
                         print('Negative Log-Likelihood:',(loss.item()*N)/elements)
@@ -158,10 +159,10 @@ if __name__ == "__main__":
                             print('AUC-PR:',pr)
                             link_pre_roc_record.append(roc)
                             link_pre_pr_record.append(pr)
-                        cadroc,cadpr = disgenet_detection(model)
-                        cad_roc_record.append(cadroc)
-                        cad_pr_record.append(cadpr)
-                        print(cad_roc_record,cad_pr_record)
+                        # cadroc,cadpr = disgenet_detection(model)
+                        # cad_roc_record.append(cadroc)
+                        # cad_pr_record.append(cadpr)
+                        # print(cad_roc_record,cad_pr_record)
 
                         # F1_complex = complex_detection(model)
                         # F1_complex_record.append(F1_complex)
@@ -175,7 +176,7 @@ if __name__ == "__main__":
 
                 sparse_i=torch.from_numpy(np.loadtxt("./data/datasets/"+dataset+'/sparse_i.txt')).long().to(device)
                 sparse_j=torch.from_numpy(np.loadtxt("./data/datasets/"+dataset+'/sparse_j.txt')).long().to(device)
-                sparse_w=torch.from_numpy(np.loadtxt("./data/datasets/"+dataset+'/sparse_w.txt')).long().to(device)
+                sparse_w=torch.from_numpy(np.loadtxt("./data/datasets/"+dataset+'/sparse_w.txt')).float().to(device)
                 # sparse_w=torch.from_numpy(np.loadtxt("./data/datasets/"+dataset+'/nor_sparse_w.txt')).long().to(device)
                 N=int(sparse_j.max()+1)
 
@@ -189,10 +190,11 @@ if __name__ == "__main__":
                     optimizer.zero_grad() # clear the gradients.   
                     loss.backward() # backpropagate
                     optimizer.step() # update the weights
-                    # writer.add_scalar("loss", (loss.detach()*N)/elements, epoch)
+                    writer.add_scalar("loss", (loss.detach()*N)/elements, epoch)
                     epoch_recod.append(epoch)
                     loss_record.append((loss.item()*N)/elements)
                     if epoch%1000==0:
+                        print(epoch)
                         print('Iteration Number:', epoch, 'Loss:',(loss.item()*N)/elements)
                         if args.LP:
                             roc,pr=model.link_prediction() 
@@ -200,9 +202,9 @@ if __name__ == "__main__":
                             print('AUC-PR:',pr)
                             link_pre_roc_record.append(roc)
                             link_pre_pr_record.append(pr)
-                        cadroc,cadpr = disgenet_detection(model)
-                        cad_roc_record.append(cadroc)
-                        cad_pr_record.append(cadpr)
+                        # cadroc,cadpr = disgenet_detection(model)
+                        # cad_roc_record.append(cadroc)
+                        # cad_pr_record.append(cadpr)
 
                         # F1_complex = complex_detection(model)
                         # F1_complex_record.append(F1_complex)
@@ -212,7 +214,7 @@ if __name__ == "__main__":
                         # PR_pathway_record.append(pr_pathway) 
 
 
-                # writer.close()
+                writer.close()
             
             root = 'D:/study/thesis/project/HBDM-main/ppi_results/models/'+name+'/'
             # Check if the folder already exists
@@ -224,10 +226,10 @@ if __name__ == "__main__":
                 print(f"Folder '{root}' already exists.")
             record_path = root + 'records.pkl'
             # Serialize and save the Tensor to the file
-            with open(record_path, 'wb') as file:
-                pickle.dump([epoch_recod,loss_record,cad_roc_record,cad_pr_record], file)
-            # Close the file
-            file.close()
+            # with open(record_path, 'wb') as file:
+            #     pickle.dump([epoch_recod,loss_record,cad_roc_record,cad_pr_record], file)
+            # # Close the file
+            # file.close()
             # with open(record_path, 'wb') as file:
             #     pickle.dump([epoch_recod,loss_record], file)
             # # Close the file
