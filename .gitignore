@@ -1,8 +1,12 @@
 data/
-ppi_results/
+results/
 .vscode/
 
 
 *.pkl
 *.png
 *.jpg
+*.err
+*.log
+*.txt
+*.pkl
