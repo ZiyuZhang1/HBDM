@@ -110,6 +110,3 @@ class Spectral_clustering_init():
         return torch.from_numpy(U_norm).float().to(self.device)
             
         
-
-
-
