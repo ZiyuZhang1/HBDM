@@ -103,6 +103,8 @@ def disgenet_detection(model):
     # for each eomplex, get precision and recall values of varing k
     roc_ks = []
     pr_ks = []
+    roc_var_ks = []
+    pr_var_ks = []
 
     ## get final df: node, cluster, 1d, 2d, label
     df['label'] = df['node'].apply(lambda x: 1 if x in group_node else 0)
@@ -150,11 +152,15 @@ def disgenet_detection(model):
                 results.append([roc,pr])
         results = np.array(results)
         roc = np.mean(results[:, 0])
+        roc_var = np.var(results[:, 0])
         pr = np.mean(results[:, 1])
+        pr_var = np.var(results[:, 1])
         roc_ks.append(roc)
+        roc_var_ks.append(roc_var)
         pr_ks.append(pr)
+        pr_var_ks.append(pr_var)
 
-    return roc_ks,pr_ks
+    return roc_ks,pr_ks,roc_var_ks,pr_var_ks
 
 def pathway_detection(model):
     node_rep = [tensor.detach().cpu().numpy() for tensor in model.latent_z]

@@ -107,10 +107,12 @@ if __name__ == "__main__":
         kfresults.append(results)
     kfresults = np.array(kfresults)
     roc_ks = np.mean(kfresults[:, 0::2], axis=0)
+    roc_varks = np.var(kfresults[:, 0::2], axis=0)
     pr_ks = np.mean(kfresults[:, 1::2], axis=0)
-    print([roc_ks,pr_ks])
+    pr_varks = np.mean(kfresults[:, 1::2], axis=0)
+    # print([roc_ks,pr_ks])
     with open(record_path, 'wb') as file:
-        pickle.dump([roc_ks, pr_ks], file)
+        pickle.dump([roc_ks, pr_ks,roc_varks,pr_varks], file)
     # Close the file
     file.close()
 # with mp.Pool(num_processes) as pool:
