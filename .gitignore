@@ -1,9 +1,9 @@
 data/
 ppi_results/
+datafigures/
 .vscode/
 
 
 *.pkl
-*.png
 *.jpg
 *.p
