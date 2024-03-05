@@ -10,8 +10,7 @@ Here, we present a practical application where HBDM is employed to uncover genes
 
 
 ##  Pipeline overview
-| <img src="https://github.com/ZiyuZhang1/HBDM/img/pipeline.png?raw=true" />   |
-
+| <img src="https://github.com/ZiyuZhang1/HBDM/blob/local/img/pipeline.png?raw=true" />   |
 Construct a gene co-expression network from expression data and then use HBDM to discover CAD-related genes and modules.
 
 
