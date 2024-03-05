@@ -76,7 +76,7 @@ optional arguments:
 The code has been primarily constructed and optimized for running in a GPU-enabled environment.
 
 ### Disease-related gene priortize and gene set enrichment analysis
-**RUN:** &emsp; ```results_analysis_code\sc_network_analysis.ipynb```
+**RUN:** &emsp; ```results_analysis_code/sc_network_analysis.ipynb```
 
 ### References
 N. Nakis, A. Celikkanat, S. Lehmann and M. Mørup, [A Hierarchical Block Distance Model for Ultra Low-Dimensional Graph Representations](https://arxiv.org/abs/2204.05885), Preprint.
